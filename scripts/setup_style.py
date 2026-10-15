@@ -31,6 +31,7 @@ import warnings
 
 import matplotlib
 import matplotlib.font_manager as fm
+from matplotlib.ft2font import FT2Font
 import matplotlib.pyplot as plt
 
 
@@ -190,6 +191,28 @@ def list_cjk_fonts() -> list[str]:
     return hits
 
 
+def _has_regular_face(family: str) -> bool:
+    """核验 normal 请求实际解析的字重，避免仅按家族名选中 Thin 字体。"""
+    try:
+        path = fm.findfont(
+            fm.FontProperties(family=[family], weight="normal"),
+            fallback_to_default=False,
+        )
+        entry = next((f for f in fm.fontManager.ttflist
+                      if f.fname == path), None)
+        if entry is not None:
+            weight = entry.weight
+            if isinstance(weight, str):
+                weight = fm.weight_dict.get(weight.lower(), 400)
+            if weight < 350:
+                return False
+        style = FT2Font(path).style_name.lower().replace(" ", "")
+        return not any(token in style for token in
+                       ("thin", "light", "hairline"))
+    except (ValueError, RuntimeError, OSError):
+        return False
+
+
 def configure_chinese_fonts(serif_for_zh: bool = False) -> str:
     """
     自动检测并配置中文字体；同时修正负号渲染。
@@ -207,20 +230,21 @@ def configure_chinese_fonts(serif_for_zh: bool = False) -> str:
 
     chosen = None
     for f in priority:
-        if f in available:
+        if f in available and _has_regular_face(f):
             chosen = f
             break
 
     if chosen is None:
         # 兜底：扫包含 cjk/han 等关键字的字体
-        for f in available:
+        for f in sorted(available):
             lower = f.lower()
-            if any(k in lower for k in ("cjk", "han", "song", "hei", "yahei", "kaiti")):
+            if (any(k in lower for k in ("cjk", "han", "song", "hei", "yahei", "kaiti"))
+                    and _has_regular_face(f)):
                 chosen = f
                 break
 
     if chosen is None:
-        raise RuntimeError(CJK_INSTALL_HINT)
+        raise RuntimeError("未找到可用的常规字重中文字体。" + CJK_INSTALL_HINT)
 
     # 中文期刊常要求中文 + Times New Roman 混排：中文走中文字体，西文走 Times
     plt.rcParams["font.family"] = ["sans-serif"] if not serif_for_zh else ["serif"]

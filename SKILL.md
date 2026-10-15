@@ -216,6 +216,8 @@ export_figure(
 
 ## 中文支持
 
+中文字体检查应核对实际解析的字体文件与字重。能显示汉字仍可能因 Thin/Light 字体而难读；应在最终展示宽度下检查标签，必要时换用可用的常规字重字体。字号按用途和画布调整，不设统一增大规则。
+
 中文 matplotlib 出方框的根本原因：默认字体（DejaVu Sans 等）不含 CJK 字符表。`setup_style(lang='zh')` 自动做两件事：
 
 1. 按优先级查中文字体：`Noto Sans CJK SC` > `Source Han Sans SC` > `SimHei` > `Microsoft YaHei`
