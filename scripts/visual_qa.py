@@ -102,6 +102,8 @@ def _draw_and_collect_glyph_warnings(fig) -> list[str]:
             buf = io.BytesIO()
             fig.savefig(buf, format="png", dpi=100)
             buf.close()
+            # savefig 临时改变 DPI；恢复当前画布渲染状态后再测量文字。
+            fig.canvas.draw()
         for w in wlist:
             s = str(w.message)
             if any(m in s for m in _GLYPH_MARKERS):
@@ -166,18 +168,22 @@ def audit_layout(fig, clip_tol_px: float = 2.0, overlap_tol_px: float = 1.0
     H = float(fig.bbox.height)
 
     # ---- 2. 文字越界裁切 ----
-    # 刻度标签的越界由 constrained_layout / bbox_inches='tight' 自动处理，且另有
-    # 刻度重叠检测覆盖——这里跳过它们，只盯 title / 轴标签 / 标注这类用户文字，
-    # 避免 constrained_layout 下刻度贴边造成的误报。
-    tick_ids = set()
+    # 刻度标签也可能越界。tight 裁边并非所有导出的默认设置，
+    # 相邻刻度不重叠也不能证明文字在画布内。
+    # 自动刻度可能含视区外的备用标签，这些标签不实际显示，不能算裁切。
+    unrendered_tick_ids = set()
     for ax in fig.axes:
-        for tl in (*ax.get_xticklabels(), *ax.get_xticklabels(minor=True),
-                   *ax.get_yticklabels(), *ax.get_yticklabels(minor=True)):
-            tick_ids.add(id(tl))
+        for axis, limits in ((ax.xaxis, ax.get_xlim()),
+                             (ax.yaxis, ax.get_ylim())):
+            lo, hi = sorted(limits)
+            tolerance = max(1.0, abs(lo), abs(hi)) * 1e-10
+            for tick in axis.get_major_ticks() + axis.get_minor_ticks():
+                if tick.get_loc() < lo - tolerance or tick.get_loc() > hi + tolerance:
+                    unrendered_tick_ids.update((id(tick.label1), id(tick.label2)))
 
     clipped: list[str] = []
     for t in _visible_texts(fig):
-        if id(t) in tick_ids:
+        if id(t) in unrendered_tick_ids:
             continue
         try:
             bb = t.get_window_extent(renderer)
